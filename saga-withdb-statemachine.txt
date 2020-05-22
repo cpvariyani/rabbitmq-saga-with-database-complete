@@ -1,0 +1,73 @@
+creation of table
+
+------------------------------------------------------------
+
+BusConstants
+public const string StartOrderQueue = "start-order";
+------------------------------------------------------------
+
+rabbitmq-message
+
+Events IOrderCancelEvent, IOrderStartedEvent,IOrderValidateEvent
+IStartOrder
+-------------------------------------------------------------------
+rabbitmq-saga
+
+DbConfiguration files
+StateMachine -OrderStateMachine.cs and OrderValidateEvent.cs
+--------------------------------------------------------------------
+order ms - add cosumers
+
+--------------------------------------------------------------------
+OrderController
+
+  [HttpPost]
+        [Route("createorder")]
+        public async Task<IActionResult> CreateOrderUsingStateMachineInDb([FromBody] OrderModel orderModel)
+        {
+            orderModel.OrderId = Guid.NewGuid();
+            var endpoint = await _sendEndpointProvider.GetSendEndpoint(new Uri("queue:" + BusConstants.StartOrderQueue));
+
+            _orderDataAccess.SaveOrder(orderModel);
+
+            await endpoint.Send<IStartOrder>(new
+            {
+                OrderId = orderModel.OrderId,
+                PaymentCardNumber = orderModel.CardNumber,
+                ProductName = orderModel.ProductName
+            });
+
+            return Ok("Success");
+        }
+
+
+startup 
+
+services.TryAddSingleton(KebabCaseEndpointNameFormatter.Instance);
+            services.AddMassTransit(cfg =>
+            {
+                cfg.AddRequestClient<IStartOrder>();
+
+                cfg.AddConsumer<StartOrderConsumer>();
+                cfg.AddConsumer<OrderCancelledConsumer>();
+
+                cfg.AddBus(provider => RabbitMqBus.ConfigureBus(provider));
+            });
+
+            services.AddMassTransitHostedService();
+
+------------------------------------------------------------------------------------------------------------------
+stock-ms
+OrderValidateConsumer
+
+startup
+
+  services.AddMassTransit(cfg =>
+            {
+                cfg.AddConsumer<OrderValidateConsumer>();
+
+                cfg.AddBus(provider => RabbitMqBus.ConfigureBus(provider, (cfg, host) =>
+                {
+                }));
+            });
+            services.AddMassTransitHostedService();
